@@ -1,55 +1,65 @@
-# christmas-tree-v17.6
+# christmas-tree-v17.6 🎄
 
-一个零依赖的单文件网页圣诞树：旋转 3D 粒子树 + 螺旋彩灯 + 飘雪 + 星顶光晕 + 圣诞倒计时。
+视频同款的「赛博粒子圣诞树」：Three.js 粒子树 + MediaPipe 手势识别 + 拍立得照片挂件。
+页面为原作者 [electronicminer/gesture-Christmas_tree-3d_with_photo](https://github.com/electronicminer/gesture-Christmas_tree-3d_with_photo) 的开源作品，
+本仓库在原版基础上做了这些改动：依赖从 jsdelivr 换到国内可直接访问的 `registry.npmmirror.com`；移除了会阻塞页面加载的第三方统计脚本；
+界面控件中文化；新增了访客自助上传照片的模块。
 
-打开 `index.html` 即可查看，无需安装任何依赖、不联网、无外链资源。
+访问地址：https://wlz200319.github.io/christmas-tree-v17.6/
 
-## 页面内容
+---
 
-- **Canvas 粒子树**：1700 个绿色点云组成圆锥树体，按深度排序绘制，有立体体积感
-- **螺旋彩灯**：270 颗灯沿着 9 圈螺旋线盘绕，逐颗独立相位闪烁，叠加发光混合模式
-- **挂饰与星顶**：16 颗彩色挂饰球，树顶四角星带脉动光晕与缓慢呼吸旋转
-- **飘雪与地面光**：远景/近景双层雪，树根处有一圈雪地反光
-- **交互**：鼠标/手指按住左右拖动旋转，松手带惯性回正；右上角按钮或双击暂停
-- **倒计时**：底部自动计算距离下一个 12 月 25 日还有多少天
-- **自适应**：按设备像素比渲染、窗口缩放自动重排，手机端同样可用
+## 玩法
 
-## 本地预览
+**鼠标 / 触屏**
 
-直接双击 `index.html`，或在该目录执行：
+- 按住拖动：旋转视角
+- 滚轮 / 双指：缩放
+- 点照片：放大聚焦
+- 底部三个圆钮：🎄 树形态 / ✨ 炸散成星云 / 🔍 随机聚焦一张照片
+- 按 `H`：隐藏所有按钮，方便截图录屏
 
-```bash
-python3 -m http.server 8000
-```
+**手势（需要摄像头）**
 
-然后访问 http://localhost:8000
+1. 点右上角 `📷 启用手势`，浏览器会弹窗请求摄像头权限，选「允许」
+2. 首次会下载约 8MB 的 AI 模型，等十几秒
+3. 手心对着镜头：
+   - ✋ 张开手掌 = 粒子炸散成星云，同时可用手转动视角
+   - ✊ 握拳 = 粒子重新聚合成圣诞树
+   - 🤏 捏合 = 随机抓一张照片放大给你看
 
-## GitHub Pages 部署（三条命令版）
+**照片（谁打开这个网页都能传自己的）**
 
-```bash
-git init
-git add .
-git commit -m "christmas-tree-v17.6"
-git branch -M main
-git remote add origin https://github.com/<你的用户名>/christmas-tree-v17.6.git
-git push -u origin main
-```
+1. 点 `🖼 上传照片`，可以一次选多张；也可以直接把照片文件拖进页面
+2. 照片会自动压缩（长边 1400px），变成金框拍立得挂在树周围，最多 12 张
+3. 照片存在你这台电脑的浏览器里（localStorage），刷新、关掉再打开都还在；换电脑 / 换浏览器就看不到
+4. 点 `🗑 清空照片` 一次性全删掉
 
-推上去后在仓库 **Settings → Pages** 里把 Source 选成 `Deploy from a branch`，分支选 `main`、目录选 `/ (root)`，保存后等 1 分钟左右，访问：
+注意：访客上传的照片只保存在各自的浏览器里，不会上传到服务器，所以别人打开链接看到的是他自己传的照片，看不到你的。
+想让「所有人打开都自带同一批照片」，用下面这种打包方式。
 
-```
-https://<你的用户名>.github.io/christmas-tree-v17.6/
-```
+**把照片打包进页面（所有人打开都能看到）**
 
-`.nojekyll` 文件已放好，避免 Pages 用 Jekyll 处理静态文件。
+把照片放进仓库 `images/` 目录，命名为 `(1).jpg`、`(2).jpg` …（也支持 png），
+再把 `index.html` 里 `CONFIG.preload.scanCount` 改成照片数量，页面启动时会自动挂到树上。
 
-## 自定义
+---
 
-| 想改什么 | 改哪里 |
+## 技术说明
+
+- `index.html` 是唯一页面文件，其余全是外部依赖（npmmirror CDN 直连）
+- three.js 0.160 + 后期处理（Bloom 泛光）
+- MediaPipe Hand Landmarker 做手势识别
+- 照片上传用 Canvas 压缩后转 dataURL 存 localStorage，启动时自动恢复
+- 双击本地文件打开也能看到粒子树，但摄像头手势需要 http(s) 环境（浏览器安全策略限制）
+
+## 改文字 / 改风格
+
+| 想改什么 | 位置 |
 | --- | --- |
-| 树的高矮胖瘦 | `TREE_H`、`TREE_R` |
-| 灯的数量/圈数 | `LIGHTS`、`tt * TAU * 9` 里的 `9` |
-| 灯的颜色 | `LIGHT_COLORS` 数组 |
-| 旋转速度 | `BASE_SPIN`（单位：弧度/秒） |
-| 雪的大小 | `newFlake()` 里的 `r`、`vy` |
-| 标题文字 | `<h1>` 与 `<p id="count">` |
+| 大标题 `MERRY CHRISTMAS` | `index.html` 里 `<h1>` |
+| 树的粒子数量与形态 | `CONFIG.particles` |
+| 金色 / 深绿主色 | `CONFIG.colors` |
+| 自动挂载照片数量 | `CONFIG.preload.scanCount` |
+| 照片轨道半径 / 大小 | `updatePhotoLayout()` 里的 `R`、`addPhotoToScene()` 里的 `const s` |
+| 最多可挂几张照片 | `MAX_PHOTOS` |

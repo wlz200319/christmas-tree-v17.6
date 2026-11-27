@@ -292,18 +292,14 @@
         
         <div class="controls-wrapper">
             <div class="btn-group">
-                <div class="control-btn" id="cam-btn">📷 Enable Gesture</div>
-                <label class="control-btn">
-                    Select Folder
-                    <input type="file" id="folder-input" webkitdirectory directory multiple>
-                </label>
-                <label class="control-btn">
-                    Select Files
+                <div class="control-btn" id="cam-btn">📷 启用手势</div>
+                <label class="control-btn" for="file-input">🖼 上传照片
                     <input type="file" id="file-input" multiple accept="image/*">
                 </label>
+                <div class="control-btn" id="clear-btn">🗑 清空照片</div>
+                <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
             </div>
-            <!-- 【修改】添加了 Press 'S' for Stats 的提示 -->
-            <div class="hint-text">Drag to Rotate · Click Photo · Camera for Gestures</div>
+            <div class="hint-text">拖动旋转 · 点击照片放大 · 也可以把照片直接拖进页面</div>
         </div>
 
         <!-- 触屏模式切换按钮 -->
@@ -317,7 +313,7 @@
     <div id="webcam-wrapper">
         <video id="webcam" autoplay playsinline webkit-playsinline></video>
     </div>
-    <div id="debug-info">Drag to rotate • Tap photo to view</div>
+    <div id="debug-info">拖动旋转 · 点击照片放大</div>
 
     <script type="module">
         import * as THREE from 'three';
@@ -396,6 +392,7 @@
             createDust();
             createSnow();
             loadPredefinedImages();
+            await restoreStoredPhotos();
             setupPostProcessing();
             setupEvents();
             setupTouchAndClick(); 
@@ -635,8 +632,7 @@
                     this.mesh.rotation.z += this.spinSpeed.z * dt; 
                 } else if (mode === 'TREE') {
                     if (this.type === 'PHOTO') {
-                        this.mesh.lookAt(0, this.mesh.position.y, 0);
-                        this.mesh.rotateY(Math.PI);
+                        this.mesh.lookAt(camera.position);
                     } else {
                         this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
                         this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
@@ -661,22 +657,16 @@
             const count = photos.length;
             if (count === 0) return;
             const h = CONFIG.particles.treeHeight * 0.9;
-            const bottomY = -h/2; const stepY = h / count; const loops = 3;
+            const R = CONFIG.particles.treeRadius * 1.65;
             photos.forEach((p, i) => {
-                const y = bottomY + stepY * i + stepY/2;
-                const normalizedH = (y + h/2) / CONFIG.particles.treeHeight; 
-                const r = Math.max(1.0, CONFIG.particles.treeRadius * (1.0 - normalizedH)) + 3.0; 
-                const angle = normalizedH * Math.PI * 2 * loops + (Math.PI/4); 
-                p.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+                const t = count === 1 ? 0.5 : i / (count - 1);
+                const y = -h * 0.42 + t * h * 0.92;
+                const angle = i * 2.399 + 0.9;
+                const rr = R * (0.82 + 0.18 * Math.sin(i * 1.7));
+                p.posTree.set(Math.cos(angle) * rr, y, Math.sin(angle) * rr);
             });
         }
-// <!--
-//   - @Project: Grand Luxury Tree - Christmas Edition (Touch & Gesture & Stats)
-//   - @Author: wp/electronicminer
-//   - @Date: 2025-12-08
-//   - @Description: 3D Christmas tree with AI Gestures + Touch + Traffic Analytics.
-//   - @Style: Luxury Dashboard UI (Hidden by default, toggle with 'S')
-// --> 
+
         function createParticles() {
             const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
             const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
@@ -744,26 +734,109 @@
             const group = new THREE.Group();
             group.add(frame); group.add(photo);
             frame.scale.set(width/1.2, height/1.2, 1);
-            const s = 0.8; group.scale.set(s,s,s);
+            const s = 2.6; group.scale.set(s,s,s);
             photoMeshGroup.add(group);
             particleSystem.push(new Particle(group, 'PHOTO', false));
             updatePhotoLayout();
         }
 
+        /* ===== 照片模块：上传 / 压缩 / 本地缓存 / 清空 ===== */
+        const PHOTO_LS_KEY = 'ct_v17_photos';
+        const MAX_PHOTOS = 12;
+
+        function photoCount() {
+            return particleSystem.filter(p => p.type === 'PHOTO').length;
+        }
+
+        function textureFromDataUrl(dataUrl) {
+            return new Promise((resolve) => {
+                new THREE.TextureLoader().load(dataUrl, (t) => {
+                    t.colorSpace = THREE.SRGBColorSpace;
+                    resolve(t);
+                });
+            });
+        }
+
+        function compressImage(file, maxSide, quality) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                    const w = Math.max(1, Math.round(img.width * scale));
+                    const h = Math.max(1, Math.round(img.height * scale));
+                    const cv = document.createElement('canvas');
+                    cv.width = w; cv.height = h;
+                    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(cv.toDataURL('image/jpeg', quality));
+                };
+                img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+                img.src = url;
+            });
+        }
+
+        function readStoredPhotos() {
+            try { return JSON.parse(localStorage.getItem(PHOTO_LS_KEY) || '[]'); } catch (e) { return []; }
+        }
+
+        function persistPhoto(dataUrl) {
+            const arr = readStoredPhotos();
+            arr.push(dataUrl);
+            const keep = arr.slice(-MAX_PHOTOS);
+            while (keep.length > 1 && JSON.stringify(keep).length > 4.4e6) keep.shift();
+            try { localStorage.setItem(PHOTO_LS_KEY, JSON.stringify(keep)); } catch (e) { console.warn('storage full'); }
+        }
+
+        async function addPhotosFromFiles(files) {
+            const list = Array.from(files || []).filter(f => f.type && f.type.startsWith('image/'));
+            if (!list.length) { showMsg('没识别到图片'); return; }
+            let added = 0;
+            for (const f of list) {
+                if (photoCount() >= MAX_PHOTOS) { showMsg('最多挂 ' + MAX_PHOTOS + ' 张照片'); break; }
+                try {
+                    const dataUrl = await compressImage(f, 1400, 0.78);
+                    const tex = await textureFromDataUrl(dataUrl);
+                    addPhotoToScene(tex);
+                    persistPhoto(dataUrl);
+                    added++;
+                } catch (e) { console.warn('skip', f && f.name, e); }
+            }
+            if (added) showMsg('已挂上 ' + added + ' 张照片 · 共 ' + photoCount() + ' 张');
+        }
+
+        async function restoreStoredPhotos() {
+            const arr = readStoredPhotos();
+            for (const dataUrl of arr) {
+                try {
+                    const tex = await textureFromDataUrl(dataUrl);
+                    addPhotoToScene(tex);
+                } catch (e) {}
+            }
+        }
+
+        function clearPhotos() {
+            const keep = [];
+            particleSystem.forEach(p => {
+                if (p.type === 'PHOTO') {
+                    photoMeshGroup.remove(p.mesh);
+                    p.mesh.traverse(o => {
+                        if (o.geometry) o.geometry.dispose();
+                        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+                    });
+                } else { keep.push(p); }
+            });
+            particleSystem = keep;
+            try { localStorage.removeItem(PHOTO_LS_KEY); } catch (e) {}
+            updatePhotoLayout();
+            showMsg('照片已清空');
+        }
+
         function handleImageUpload(e) {
             const files = e.target.files;
-            if(!files.length) return;
-            Array.from(files).forEach(f => {
-                if (!f.type.startsWith('image/')) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    new THREE.TextureLoader().load(ev.target.result, (t) => {
-                        t.colorSpace = THREE.SRGBColorSpace;
-                        addPhotoToScene(t);
-                    });
-                }
-                reader.readAsDataURL(f);
-            });
+            if (!files || !files.length) return;
+            addPhotosFromFiles(files);
+            e.target.value = '';
         }
 //         <!--
 //   - @Project: Grand Luxury Tree - Christmas Edition (Touch & Gesture & Stats)
@@ -793,8 +866,8 @@
 
         async function initMediaPipe() {
             if (isCameraRunning) return;
-            camBtn.innerText = "Initializing...";
-            debugInfo.innerText = "Loading AI models...";
+            camBtn.innerText = "正在启用…";
+            debugInfo.innerText = "正在加载手势模型…";
             video = document.getElementById('webcam');
             try {
                 const vision = await FilesetResolver.forVisionTasks("https://registry.npmmirror.com/@mediapipe/tasks-vision/0.10.3/files/wasm");
@@ -807,17 +880,17 @@
                 video.srcObject = stream;
                 video.addEventListener("loadeddata", predictWebcam);
                 document.getElementById('webcam-wrapper').style.opacity = 1;
-                debugInfo.innerText = "Gesture Active: Show Hand";
-                camBtn.innerText = "Gesture Active";
+                debugInfo.innerText = "手势已开启 · 把手伸到镜头前";
+                camBtn.innerText = "手势已开启";
                 camBtn.classList.add('active');
                 isCameraRunning = true;
             } catch(e) {
                 console.warn("Camera error:", e);
-                let msg = "Camera Error: " + e.name;
-                if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') msg = "Please allow camera access!";
-                else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') msg = "HTTPS required for camera!";
+                let msg = "摄像头出错：" + e.name;
+                if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') msg = "请在弹窗里允许使用摄像头";
+                else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') msg = "摄像头需要 HTTPS 或本机服务器，直接双击文件打开时不可用";
                 debugInfo.innerText = msg; showMsg(msg);
-                camBtn.innerText = "Retry Camera";
+                camBtn.innerText = "重试摄像头";
             }
         }
 // <!--
@@ -875,6 +948,15 @@
             });
             document.getElementById('file-input').addEventListener('change', handleImageUpload);
             document.getElementById('folder-input').addEventListener('change', handleImageUpload);
+            const clearBtn = document.getElementById('clear-btn');
+            if (clearBtn) clearBtn.addEventListener('click', clearPhotos);
+            window.addEventListener('dragover', e => e.preventDefault());
+            window.addEventListener('drop', e => {
+                e.preventDefault();
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+                    addPhotosFromFiles(e.dataTransfer.files);
+                }
+            });
             camBtn.addEventListener('click', () => { initMediaPipe(); });
             window.addEventListener('keydown', (e) => {
                 const key = e.key.toLowerCase();
