@@ -38,7 +38,7 @@
     padding:8px 15px; border-radius:999px; transition:.25s;
   }
   #toggle:hover{ background:rgba(255,255,255,.14); color:#fff; }
-  .caption{ position:fixed; left:0; right:0; bottom:max(4.5vh, 26px); z-index:2; text-align:center; pointer-events:none; }
+  .caption{ position:fixed; left:0; right:0; bottom:max(5.2vh, 34px); z-index:2; text-align:center; pointer-events:none; }
   .caption h1{
     font-family:"Didot","Baskerville","Times New Roman",Georgia,serif;
     font-weight:400; letter-spacing:.2em; text-indent:.2em;
@@ -52,7 +52,7 @@
     color:rgba(255,255,255,.58);
   }
   .hint{
-    position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:2;
+    position:fixed; left:50%; transform:translateX(-50%); bottom:9px; z-index:2;
     font-size:11px; letter-spacing:.14em; color:rgba(255,255,255,.3);
     transition:opacity .8s; pointer-events:none;
   }
@@ -450,6 +450,9 @@
   resize();
   setCountdown();
   requestAnimationFrame(frame);
+
+  // 提示文字 7 秒后自动淡出，避免和底部文案挤在一起
+  setTimeout(function () { if (hint) hint.classList.add('off'); }, 7000);
 })();
 </script>
 </body>
