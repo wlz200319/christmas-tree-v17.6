@@ -296,10 +296,14 @@
                 <label class="control-btn" for="file-input">🖼 上传照片
                     <input type="file" id="file-input" multiple accept="image/*">
                 </label>
+                <label class="control-btn" for="music-input">🎵 添加音乐
+                    <input type="file" id="music-input" accept="audio/*" style="display:none">
+                </label>
+                <div class="control-btn" id="music-btn" style="display:none">⏸ 暂停音乐</div>
                 <div class="control-btn" id="clear-btn">🗑 清空照片</div>
                 <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
             </div>
-            <div class="hint-text">拖动旋转 · 点击照片放大 · 也可以把照片直接拖进页面</div>
+            <div class="hint-text">拖动旋转 · 点击照片放大 · 照片和音乐都能直接拖进页面</div>
         </div>
 
         <!-- 触屏模式切换按钮 -->
@@ -633,6 +637,7 @@
                 } else if (mode === 'TREE') {
                     if (this.type === 'PHOTO') {
                         this.mesh.lookAt(camera.position);
+                        this.mesh.rotateZ(Math.sin(clock.elapsedTime * 0.6 + this.mesh.id) * 0.06 + (this.tiltZ || 0));
                     } else {
                         this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
                         this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
@@ -644,7 +649,7 @@
                 if (this.isDust) {
                     s = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id));
                     if (mode === 'TREE') s = 0; 
-                } else if (mode === 'SCATTER' && this.type === 'PHOTO') s = this.baseScale * 2.5; 
+                } else if (mode === 'SCATTER' && this.type === 'PHOTO') s = this.baseScale * 3.2; 
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) s = 4.5; else s = this.baseScale * 0.8; 
                 }
@@ -657,13 +662,17 @@
             const count = photos.length;
             if (count === 0) return;
             const h = CONFIG.particles.treeHeight * 0.9;
-            const R = CONFIG.particles.treeRadius * 1.65;
+            const R = CONFIG.particles.treeRadius * 1.55;
             photos.forEach((p, i) => {
-                const t = count === 1 ? 0.5 : i / (count - 1);
-                const y = -h * 0.42 + t * h * 0.92;
+                const t = count === 1 ? 0.45 : i / (count - 1);
+                const y = -h * 0.40 + t * h * 0.95;
                 const angle = i * 2.399 + 0.9;
-                const rr = R * (0.82 + 0.18 * Math.sin(i * 1.7));
+                const inner = (i % 3 === 2);
+                const rr = inner
+                    ? Math.max(1.2, CONFIG.particles.treeRadius * (1 - t) * 0.62)
+                    : R * (0.86 + 0.16 * Math.sin(i * 1.7));
                 p.posTree.set(Math.cos(angle) * rr, y, Math.sin(angle) * rr);
+                p.tiltZ = (inner ? 0.12 : 0.0) + Math.sin(i * 3.1) * 0.10;
             });
         }
 
@@ -674,12 +683,18 @@
             const candyGeo = new THREE.TubeGeometry(curve, 16, 0.08, 8, false);
             const goldMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1, envMapIntensity: 2.0, emissive: 0x443300, emissiveIntensity: 0.3 });
             const greenMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.deepGreen, metalness: 0.2, roughness: 0.8, emissive: 0x002200, emissiveIntensity: 0.2 });
+            const giftPalette = [0x2a6bd8, 0x1fb8e0, 0x24b06a, 0xf2c319, 0xe0552b, 0xb43fd8, 0xf5f0e6];
+            const giftMats = giftPalette.map(c => new THREE.MeshStandardMaterial({
+                color: c, metalness: 0.55, roughness: 0.35,
+                emissive: new THREE.Color(c).multiplyScalar(0.55), emissiveIntensity: 0.65
+            }));
             const redMat = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.accentRed, metalness: 0.3, roughness: 0.2, clearcoat: 1.0, emissive: 0x330000 });
             const candyMat = new THREE.MeshStandardMaterial({ map: caneTexture, roughness: 0.4 });
             for (let i = 0; i < CONFIG.particles.count; i++) {
                 const rand = Math.random();
                 let mesh, type;
-                if (rand < 0.40) { mesh = new THREE.Mesh(boxGeo, greenMat); type = 'BOX'; }
+                if (rand < 0.12) { mesh = new THREE.Mesh(boxGeo, greenMat); type = 'BOX'; }
+                else if (rand < 0.44) { mesh = new THREE.Mesh(boxGeo, giftMats[Math.floor(Math.random() * giftMats.length)]); type = 'BOX'; }
                 else if (rand < 0.70) { mesh = new THREE.Mesh(boxGeo, goldMat); type = 'GOLD_BOX'; }
                 else if (rand < 0.92) { mesh = new THREE.Mesh(sphereGeo, goldMat); type = 'GOLD_SPHERE'; }
                 else if (rand < 0.97) { mesh = new THREE.Mesh(sphereGeo, redMat); type = 'RED'; }
@@ -838,6 +853,50 @@
             addPhotosFromFiles(files);
             e.target.value = '';
         }
+
+        /* ===== 背景音乐模块 ===== */
+        let bgmAudio = null;
+        let bgmObjectUrl = null;
+
+        function syncMusicBtn() {
+            const btn = document.getElementById('music-btn');
+            if (!btn) return;
+            if (!bgmAudio) { btn.style.display = 'none'; return; }
+            btn.style.display = '';
+            btn.textContent = bgmAudio.paused ? '▶ 继续音乐' : '⏸ 暂停音乐';
+        }
+
+        function startBgm(file) {
+            if (!file) return;
+            if (bgmAudio) { bgmAudio.pause(); }
+            if (bgmObjectUrl) { URL.revokeObjectURL(bgmObjectUrl); }
+            bgmObjectUrl = URL.createObjectURL(file);
+            bgmAudio = new Audio(bgmObjectUrl);
+            bgmAudio.loop = true;
+            bgmAudio.volume = 0.8;
+            bgmAudio.addEventListener('play', syncMusicBtn);
+            bgmAudio.addEventListener('pause', syncMusicBtn);
+            bgmAudio.play().then(() => {
+                showMsg('🎵 背景音乐已开始播放');
+            }).catch(() => {
+                showMsg('音乐已准备好：点一下页面任意位置就会开始播放');
+                const kick = () => {
+                    if (bgmAudio && bgmAudio.paused) bgmAudio.play().catch(() => {});
+                    document.removeEventListener('pointerdown', kick, true);
+                };
+                document.addEventListener('pointerdown', kick, true);
+            });
+            syncMusicBtn();
+        }
+
+        function toggleBgm() {
+            if (!bgmAudio) return;
+            if (bgmAudio.paused) bgmAudio.play().catch(() => {}); else bgmAudio.pause();
+        }
+
+        function isAudioFile(file) {
+            return !!file && (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|aac|flac)$/i.test(file.name || ''));
+        }
 //         <!--
 //   - @Project: Grand Luxury Tree - Christmas Edition (Touch & Gesture & Stats)
 //   - @Author: wp/electronicminer
@@ -950,12 +1009,23 @@
             document.getElementById('folder-input').addEventListener('change', handleImageUpload);
             const clearBtn = document.getElementById('clear-btn');
             if (clearBtn) clearBtn.addEventListener('click', clearPhotos);
+            const musicInput = document.getElementById('music-input');
+            if (musicInput) musicInput.addEventListener('change', (e) => {
+                const f = e.target.files && e.target.files[0];
+                startBgm(f);
+                e.target.value = '';
+            });
+            const musicBtn = document.getElementById('music-btn');
+            if (musicBtn) musicBtn.addEventListener('click', toggleBgm);
             window.addEventListener('dragover', e => e.preventDefault());
             window.addEventListener('drop', e => {
                 e.preventDefault();
-                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
-                    addPhotosFromFiles(e.dataTransfer.files);
-                }
+                if (!e.dataTransfer || !e.dataTransfer.files) return;
+                const files = Array.from(e.dataTransfer.files);
+                const audio = files.find(isAudioFile);
+                if (audio) startBgm(audio);
+                const imgs = files.filter(f => f.type && f.type.startsWith('image/'));
+                if (imgs.length) addPhotosFromFiles(imgs);
             });
             camBtn.addEventListener('click', () => { initMediaPipe(); });
             window.addEventListener('keydown', (e) => {
