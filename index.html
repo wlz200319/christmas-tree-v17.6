@@ -303,7 +303,7 @@
                 <div class="control-btn" id="clear-btn">🗑 清空照片</div>
                 <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
             </div>
-            <div class="hint-text">拖动旋转 · 点击照片放大 · 照片和音乐都能直接拖进页面</div>
+            <div class="hint-text">拖动旋转 · 点击照片放大 · ✋张开=散开 ✊握拳=聚树 🤏捏合=放大照片</div>
         </div>
 
         <!-- 触屏模式切换按钮 -->
@@ -984,15 +984,34 @@
                 let avgTipDist = 0; tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y)); avgTipDist /= 4;
                 const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
                 const extensionRatio = avgTipDist / handSize; const pinchRatio = pinchDist / handSize;
-                debugInfo.innerText = `Gesture Detected: ${STATE.mode}`;
-                if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; }
-                else if (pinchRatio < 0.35) {
-                    if (STATE.mode !== 'FOCUS') {
-                        STATE.mode = 'FOCUS';
+                // 食指伸出程度：捏合时食指是伸直的，握拳时食指是收起来的，用它区分“捏合”和“握拳”
+                const indexExt = Math.hypot(lm[8].x - lm[5].x, lm[8].y - lm[5].y) / handSize;
+                const isPinch = (pinchRatio < 0.40) && (indexExt > 0.50);
+                const now = performance.now();
+
+                if (isPinch) {
+                    // 捏合优先级最高（否则会被“握拳聚树”抢掉）
+                    if (now - (STATE.lastPinch || 0) > 900) {
                         const photos = particleSystem.filter(p => p.type === 'PHOTO');
-                        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random()*photos.length)].mesh;
+                        if (photos.length) {
+                            let idx = Math.floor(Math.random() * photos.length);
+                            if (photos.length > 1 && photos[idx].mesh === STATE.focusTarget) idx = (idx + 1) % photos.length;
+                            STATE.mode = 'FOCUS';
+                            STATE.focusTarget = photos[idx].mesh;
+                            STATE.lastPinch = now;
+                            showMsg('🤏 抓起一张照片：' + (idx + 1) + ' / ' + photos.length);
+                        } else {
+                            STATE.lastPinch = now;
+                            showMsg('还没有照片，先点“上传照片”传几张吧');
+                        }
                     }
-                } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
+                    debugInfo.innerText = '手势：🤏 捏合 · 放大照片';
+                    return;
+                }
+
+                debugInfo.innerText = 'Gesture Detected: ' + STATE.mode;
+                if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; }
+                else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
             } else {
                 STATE.hand.detected = false;
             }
